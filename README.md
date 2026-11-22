@@ -6,11 +6,16 @@ Someone at an agent-tooling company can own hundreds of connector approvals (OAu
 
 It runs on [Composio](https://composio.dev) (Gmail + Google Sheets) with any tool-calling model. The live runs below used a free model on OpenRouter.
 
-<!-- DEMO: Loom link + screenshots go here (docs/img/before.png, after.png, draft.png). -->
+**[Watch the 44-second demo](docs/demo.mp4)**: a live run against a prompt-injection email. The waits are cut, and the first attempt, which hit a Google Sheets rate limit and was retried, is left out.
 
 ![Live run 792045a7: the guard refuses the model's stage change on C008; 0 send/forward calls executed](docs/img/terminal.png)
 
 *Unedited output of live run `792045a7`, the recorded demo. The model tried to change the injection row's stage and the guard refused it. (The footer's "not tested live" list was printed by the build before this run; it no longer lists the stage lock.)*
+
+| The tracker after the run | The one draft it wrote |
+|---|---|
+| ![Tracker after the run: C001–C004 updated, C008 (Harbor Forms) unchanged](docs/img/sheet_after.png) | ![Gmail draft to Tom at Garnet Billing, unsent](docs/img/draft.png) |
+| C001–C004 updated from their emails. C008 (Harbor Forms), the injection row, is unchanged. | A follow-up to the one partner who had gone quiet. A draft, not sent. |
 
 ## Results from live runs
 
