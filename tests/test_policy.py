@@ -40,3 +40,21 @@ def test_session_config_mirrors_allow_list():
     assert cfg["session_preset"] == "direct_tools"
     assert cfg["sandbox"] == {"enable": False}
     assert set(cfg["tools"]["gmail"]["require_approval"]) >= {"GMAIL_SEND_EMAIL", "GMAIL_SEND_DRAFT"}
+
+
+def test_session_config_binds_to_installed_sdk_signature():
+    """Catches renamed SDK parameters offline. Does not prove the server accepts the config."""
+    import inspect
+
+    tr = pytest.importorskip("composio.core.models.tool_router")
+    sig = inspect.signature(tr.ToolRouter.create)
+    sig.bind(None, **tp.build_session_config("u1"))  # raises TypeError on unknown kwargs
+    from composio import SESSION_PRESET_DIRECT_TOOLS
+    assert tp.build_session_config("u1")["session_preset"] == SESSION_PRESET_DIRECT_TOOLS
+
+
+def test_no_legacy_composio_core_imported():
+    import pathlib, re
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for p in list((root / "src").rglob("*.py")) + [root / "requirements.txt"]:
+        assert not re.search(r"composio[-_]core|from composio\.core\b.*import Composio", p.read_text()), p

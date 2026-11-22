@@ -101,3 +101,103 @@ class LocalBackend:
                 line.append("")
             line[col : col + len(values)] = [str(v) for v in values]
         return {"successful": True, "data": {"updatedRows": len(args.get("values") or [])}, "error": None}
+
+
+# ---------------------------------------------------------------------------
+# Deterministic stand-in for Claude in --local mode (offline, no API key).
+# It drives the SAME agent loop and executor as the real model. It is a demo of the
+# plumbing and the guard, not evidence of how the real model behaves.
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace  # noqa: E402
+
+from .prompts import parse_run_data  # noqa: E402
+from .sheet_schema import STAGES, SUSPICIOUS_NOTE  # noqa: E402
+
+_ASKS = {
+    "Requested": "Could you confirm that you received our OAuth request?",
+    "OAuth app submitted": "Could you share when you expect to make a decision on our OAuth app?",
+    "Sandbox credentials": "Could you let us know when the sandbox credentials will be available?",
+    "Partner verification": "Could you tell us what you still need from us to complete verification?",
+}
+
+
+def _classify(body: str, stage: str) -> tuple[str, str, str]:
+    """(new_stage, next_action, note) from simple keyword rules. Never Live, never backwards."""
+    b = body.lower()
+    if "approved" in b and "sandbox" in b:
+        new, nxt, note = "Sandbox credentials", "Wait for sandbox credentials", "OAuth app approved for sandbox; credentials to follow."
+    elif "sandbox" in b and "created" in b:
+        new, nxt, note = "Sandbox credentials", "Test sandbox and confirm it works", "Sandbox created; partner asks us to confirm it works."
+    elif "verification" in b and "demo video" in b:
+        new, nxt, note = "Partner verification", "Send demo video and data-handling summary", "Security team needs demo video and data-handling summary."
+    elif "redirect uri" in b:
+        new, nxt, note = stage, "Send redirect URI and scope list", "Request received; partner needs redirect URI and scope list."
+    else:
+        new, nxt, note = stage, "Human review: unclassified reply", "needs human: could not classify reply."
+    if STAGES.index(new) < STAGES.index(stage) or new == "Live":
+        new = stage
+    return new, nxt, note
+
+
+def _tool_use(i: int, name: str, args: dict) -> SimpleNamespace:
+    return SimpleNamespace(type="tool_use", id=f"local_{i}", name=name, input=args)
+
+
+class ScriptedLLM:
+    """Mimics client.messages.create(): plans all writes on turn 1, then ends."""
+
+    def __init__(self, sheet_id: str = "local-sheet"):
+        self.messages = self
+        self.sheet_id = sheet_id
+        self.turn = 0
+
+    def create(self, *, messages: list[dict], **_: Any) -> SimpleNamespace:
+        self.turn += 1
+        if self.turn > 1:
+            return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="Local planner finished.")])
+        data = parse_run_data(messages[0]["content"])
+        rows = {r["Connector_ID"]: r for r in data["tracker"]}
+        uses, skip_draft = [], set()
+        for e in data["emails"]:
+            if not e["code_match"]:
+                continue  # ambiguous: change nothing
+            row = rows[e["code_match"]["connector_id"]]
+            if looks_like_agent_instructions(e["subject"] + " " + e["body"]):
+                cells = [row["Stage"], data["today"], "Human review: suspicious email", SUSPICIOUS_NOTE]
+                skip_draft.add(row["Connector_ID"])
+            else:
+                stage, nxt, note = _classify(e["body"], row["Stage"])
+                cells = [stage, data["today"], nxt, note]
+            uses.append(_tool_use(len(uses), "GOOGLESHEETS_BATCH_UPDATE", {
+                "spreadsheet_id": self.sheet_id, "sheet_name": "Tracker",
+                "first_cell_location": f"E{row['row_number']}", "values": [cells]}))
+        for cid in data["stale_candidates"]:
+            if cid in skip_draft:
+                continue
+            r = rows[cid]
+            first = r["Partner_Contact_Name"].split()[0]
+            body = (f"Hi {first},\n\nI hope you are well. I am following up on the {r['App']} connector, "
+                    f"which is currently at the \"{r['Stage']}\" step. {_ASKS[r['Stage']]}\n\n"
+                    "Thank you for your help.\n\nBest regards,\nProduct Ops")
+            uses.append(_tool_use(len(uses), "GMAIL_CREATE_EMAIL_DRAFT", {
+                "recipient_email": r["Partner_Email"], "subject": f"Following up: {r['App']} connector", "body": body}))
+        return SimpleNamespace(stop_reason="tool_use", content=uses)
+
+
+def local_tool_schemas() -> list[dict]:
+    """Anthropic tool definitions for local mode (live mode uses session.tools())."""
+    s = lambda props, req: {"type": "object", "properties": props, "required": req}  # noqa: E731
+    return [
+        {"name": "GMAIL_FETCH_EMAILS", "description": "Fetch emails matching a Gmail query.",
+         "input_schema": s({"query": {"type": "string"}, "max_results": {"type": "integer"}}, [])},
+        {"name": "GMAIL_CREATE_EMAIL_DRAFT", "description": "Create a Gmail draft (never sent).",
+         "input_schema": s({"recipient_email": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}},
+                           ["recipient_email", "subject", "body"])},
+        {"name": "GOOGLESHEETS_BATCH_GET", "description": "Read ranges from the spreadsheet.",
+         "input_schema": s({"spreadsheet_id": {"type": "string"}, "ranges": {"type": "array", "items": {"type": "string"}}}, ["ranges"])},
+        {"name": "GOOGLESHEETS_BATCH_UPDATE", "description": "Write a block of values starting at a cell.",
+         "input_schema": s({"spreadsheet_id": {"type": "string"}, "sheet_name": {"type": "string"},
+                            "first_cell_location": {"type": "string"}, "values": {"type": "array", "items": {"type": "array"}}},
+                           ["sheet_name", "first_cell_location", "values"])},
+    ]
