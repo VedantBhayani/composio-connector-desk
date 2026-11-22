@@ -156,4 +156,4 @@ I built this with Claude Code, which wrote much of the code and tests. I decided
 
 ### Author notes
 
-<!-- TODO (author): in your own words, what surprised you in the live run and what you'd build next. -->
+The model actually saw the attack in the email and still moved the row forward, so I moved the rule into the code. Next, I would add a Blocked stage and time-in-stage tracking. The live test actually mattered: if I hadn't run it, the offline tests would have passed and I'd never have found that bug.
