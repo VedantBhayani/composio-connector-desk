@@ -7,3 +7,7 @@ __pycache__/
 ledger/
 build/
 dist/
+
+# generated for manual live setup (python -m connector_desk sample-csv; seed emails from fixtures)
+tracker_import.csv
+seed_emails.md
