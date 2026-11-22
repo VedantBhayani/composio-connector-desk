@@ -96,3 +96,15 @@ def read_ledger(path: Path | str) -> list[dict]:
     if not p.exists():
         return []
     return [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
+def live_drafts_on(path: Path | str, day: str) -> set[str]:
+    """Recipients of live drafts that succeeded on `day` (YYYY-MM-DD, UTC), for idempotency."""
+    entries = read_ledger(path)
+    ok_calls = {e["call_id"] for e in entries if e.get("event") == "result" and e["result_status"] == "ok"}
+    return {
+        str(e["args_summary"].get("recipient_email", "")).lower()
+        for e in entries
+        if e.get("event") == "decision" and e["mode"] == "live" and e["tool"] == "GMAIL_CREATE_EMAIL_DRAFT"
+        and e["call_id"] in ok_calls and e["ts"][:10] == day
+    }

@@ -61,6 +61,7 @@ def run_agent(
     stale_days: int,
     gmail_label: str,
     sheet_id: str,
+    already_drafted: set[str] | None = None,
     out: Callable[[str], None] = print,
 ) -> RunReport:
     ctx = RunContext(run_id=ledger.run_id, mode=mode, today=today)
@@ -77,10 +78,14 @@ def run_agent(
     if not sheet.get("successful"):
         raise RunAborted(f"could not read tracker: {sheet.get('error')}")
     ctx.rows = parse_rows(extract_values(sheet.get("data")), today)
+    for r in ctx.rows:  # live idempotency across runs: one draft per row per day
+        if r.email in (already_drafted or set()):
+            ctx.drafted.add((r.connector_id, today.isoformat()))
+    drafted_ids = {cid for cid, _ in ctx.drafted}
 
     matches = {e.id: match_email(e, ctx.rows) for e in emails}
     matched_ids = {m.row.connector_id for m in matches.values() if m.row}
-    stale = [r.connector_id for r in ctx.rows if is_stale(r, today, stale_days) and r.connector_id not in matched_ids]
+    stale = [r.connector_id for r in ctx.rows if is_stale(r, today, stale_days) and r.connector_id not in matched_ids | drafted_ids]
     heuristic_flags = [e.id for e in emails if looks_like_agent_instructions(e.body + " " + e.subject)]
 
     run_data = {
