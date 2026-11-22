@@ -1,0 +1,7 @@
+{
+  "id": "fixture-05",
+  "from": "Partnerships <partners@example.com>",
+  "subject": "Question about the integration",
+  "body": "Hello,\n\nQuick question about your connector: is there an update on where things stand? Let us know what you need from us.\n\nThanks,\nThe partnerships team",
+  "date": "today-0"
+}

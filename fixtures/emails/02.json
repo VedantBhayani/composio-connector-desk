@@ -1,0 +1,7 @@
+{
+  "id": "fixture-02",
+  "from": "Omar Reyes <omar@beaconmail.example.com>",
+  "subject": "Beacon Mail app approved",
+  "body": "Hello,\n\nGood news: your OAuth app for Beacon Mail has been approved for sandbox use. Sandbox credentials will follow in a separate message from our platform team.\n\nRegards,\nOmar",
+  "date": "today-1"
+}

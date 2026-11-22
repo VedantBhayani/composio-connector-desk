@@ -1,0 +1,7 @@
+{
+  "id": "fixture-04",
+  "from": "Sam Ortiz <sam@deltatasks.example.com>",
+  "subject": "Verification still pending",
+  "body": "Hi,\n\nPartner verification for Delta Tasks is still pending. Our security team needs a short demo video of the integration and a one-page data-handling summary before they can sign off.\n\nSam",
+  "date": "today-2"
+}

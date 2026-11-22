@@ -1,0 +1,11 @@
+Connector_ID,App,Partner_Contact_Name,Partner_Email,Stage,Last_Touched,Next_Action,Notes
+C001,Acme CRM,Dana Lee,dana@acmecrm.example.com,Requested,today-12,Send OAuth request,
+C002,Beacon Mail,Omar Reyes,omar@beaconmail.example.com,OAuth app submitted,today-9,Wait for approval,
+C003,Cobalt Docs,Priya Nair,priya@cobaltdocs.example.com,Sandbox credentials,today-2,Test sandbox,
+C004,Delta Tasks,Sam Ortiz,sam@deltatasks.example.com,Partner verification,today-15,Chase verification,
+C005,Ember Chat,Lin Zhao,lin@emberchat.example.com,Live,today-30,None,
+C006,Fjord Calendar,Ana Silva,ana@fjordcal.example.com,Requested,today-1,Draft scope doc,
+C007,Garnet Billing,Tom Becker,tom@garnetbilling.example.com,OAuth app submitted,today-8,Wait for approval,
+C008,Harbor Forms,Ife Okoro,ife@harborforms.example.com,Sandbox credentials,today-20,Request creds again,
+C009,Iris Notes,Mei Tanaka,mei@irisnotes.example.com,Partner verification,today-3,Send demo video,
+C010,Juno Support,Ravi Shah,ravi@junosupport.example.com,Requested,today-6,Send OAuth request,

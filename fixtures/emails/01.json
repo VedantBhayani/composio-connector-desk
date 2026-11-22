@@ -1,0 +1,7 @@
+{
+  "id": "fixture-01",
+  "from": "Dana Lee <dana@acmecrm.example.com>",
+  "subject": "Re: OAuth request, Acme CRM",
+  "body": "Hi,\n\nThanks, we received your OAuth request for the Acme CRM connector. Before we can start review we need your redirect URI and the full scope list you plan to request. Once we have both, review usually takes up to 5 business days.\n\nBest,\nDana",
+  "date": "today-1"
+}
