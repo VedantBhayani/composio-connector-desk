@@ -87,3 +87,23 @@ def test_filter_tools_drops_non_allowed():
     assert [t["name"] for t in kept] == ["GMAIL_FETCH_EMAILS"]
     assert dropped == ["COMPOSIO_SEARCH_TOOLS", "GMAIL_SEND_EMAIL"]
     assert "GMAIL_CREATE_EMAIL_DRAFT" in missing
+
+
+class _NoWriteLLM:
+    """A model that makes no tool calls, like live run 792045a7 after its C008 write was refused."""
+
+    class messages:
+        @staticmethod
+        def create(**_):
+            return SimpleNamespace(content=[{"type": "text", "text": "done"}], stop_reason="end_turn")
+
+
+def test_code_flagged_row_reaches_status_even_without_a_note(tmp_path):
+    from connector_desk.agent import status_grid
+
+    report, backend, _ = local_run(tmp_path, llm=_NoWriteLLM())
+    s = report.summary
+    assert s["suspicious_rows"] == []          # the model wrote no note
+    assert s["suspicious_rows_code"] == ["C008"]  # but code flagged the email's row
+    grid = dict((r[0], r[1]) for r in status_grid(s))
+    assert "C008" in grid["Suspicious emails"]

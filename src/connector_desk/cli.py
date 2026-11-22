@@ -19,7 +19,6 @@ from .local_mode import LocalBackend, ScriptedLLM, local_tool_schemas, write_sam
 
 # Printed after every run. Update it only from real, recorded live runs.
 NOT_TESTED_LIVE = [
-    "The stage lock actually refusing a live model (in place since run 9ecb30ae, never triggered in live runs; covered offline)",
     "The Mistral endpoint and the Anthropic provider (live runs used OpenRouter only)",
     "Volume: more than 6 emails, more than 10 tracker rows, more than one model",
 ]

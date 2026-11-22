@@ -160,6 +160,7 @@ def run_agent(
         "drafts_created": ctx.drafts_created,
         "suspicious_rows": sorted(ctx.suspicious_rows),
         "suspicious_emails_heuristic": heuristic_flags,
+        "suspicious_rows_code": sorted(ctx.stage_locked_rows),
         "needs_human": [f"{eid}: {m.note}" for eid, m in matches.items() if not m.row],
         "refused_tool_calls": len(refused),
         "send_forward_executed": sends_executed(ledger),
@@ -217,7 +218,8 @@ def status_grid(s: dict[str, Any]) -> list[list[str]]:
     grid += [
         ["Rows changed", ", ".join(s["rows_changed"]) or "none"],
         ["Drafts created", ", ".join(s["drafts_created"]) or "none"],
-        ["Suspicious emails", ", ".join(s["suspicious_rows"]) or "none"],
+        # Union: a refused write leaves no note on the row, but code still flagged it.
+        ["Suspicious emails", ", ".join(sorted(set(s["suspicious_rows"]) | set(s.get("suspicious_rows_code", [])))) or "none"],
         ["Needs human", "; ".join(s["needs_human"]) or "none"],
         ["Refused tool calls", str(s["refused_tool_calls"])],
         ["Send/forward calls executed", str(s["send_forward_executed"])],
@@ -233,7 +235,7 @@ def format_summary(s: dict[str, Any]) -> str:
         f"  rows changed: {', '.join(s['rows_changed']) or 'none'}",
         f"  drafts created: {', '.join(s['drafts_created']) or 'none'}",
         f"  suspicious (noted on row): {', '.join(s['suspicious_rows']) or 'none'}",
-        f"  suspicious (code heuristic): {', '.join(s['suspicious_emails_heuristic']) or 'none'}",
+        f"  suspicious (code heuristic): rows {', '.join(s.get('suspicious_rows_code', [])) or 'none'}; emails {', '.join(s['suspicious_emails_heuristic']) or 'none'}",
         f"  needs human: {'; '.join(s['needs_human']) or 'none'}",
         f"  refused tool calls: {s['refused_tool_calls']}",
         f"  send/forward calls executed: {s['send_forward_executed']}",
