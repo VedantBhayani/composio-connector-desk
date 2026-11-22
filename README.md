@@ -94,7 +94,7 @@ python -m connector_desk run              # real drafts and sheet edits; nothing
 
 ## Tests
 
-`pytest -q` runs offline with no env vars: **124 tests**. The ones that matter most:
+`pytest -q` runs offline with no env vars: **125 tests**. The ones that matter most:
 
 - **`test_no_send`**: a mocked model calls send, send-draft and forward on the injection email. All three are blocked, the session gets zero calls, and the ledger records three `blocked` rows. Adding `GMAIL_SEND_EMAIL` to the allow-list by hand makes it fail, so the test can catch a leak.
 - **`test_guard_scope`**: a mocked model that fully obeys the injection, trying to write all ten rows, changes only the five matched rows. It also covers refused reads, other spreadsheets, `Live`, backwards moves, unknown arguments and drafts to the wrong person.
