@@ -12,6 +12,7 @@ from typing import Any
 
 from .config import REPO_ROOT, STATUS_TAB, TRACKER_TAB
 from .sheet_schema import COLUMNS, parse_date
+from .tools_policy import parse_range
 
 FIXTURES = REPO_ROOT / "fixtures"
 
@@ -81,7 +82,7 @@ class LocalBackend:
         if tool == "GOOGLESHEETS_BATCH_GET":
             rng = f"{TRACKER_TAB}!A1:H{len(self.tracker)}"
             return {"successful": True, "data": {"valueRanges": [{"range": rng, "values": deepcopy(self.tracker)}]}, "error": None}
-        if tool == "GOOGLESHEETS_BATCH_UPDATE":
+        if tool == "GOOGLESHEETS_VALUES_UPDATE":
             return self._write(arguments)
         if tool == "GMAIL_CREATE_EMAIL_DRAFT":
             self.drafts.append(deepcopy(arguments))
@@ -89,10 +90,12 @@ class LocalBackend:
         return {"successful": False, "data": None, "error": f"local backend has no tool {tool}"}
 
     def _write(self, args: dict) -> dict[str, Any]:
-        m = re.fullmatch(r"([A-Z]+)(\d+)", str(args.get("first_cell_location", "A1")))
-        col = ord(m.group(1)[0]) - ord("A") if m else 0
-        row0 = int(m.group(2)) - 1 if m else 0
-        grid = self.status if args.get("sheet_name") == STATUS_TAB else self.tracker
+        parsed = parse_range(args.get("range"))
+        if parsed is None:
+            return {"successful": False, "data": None, "error": f"bad range {args.get('range')!r}"}
+        sheet, c1, r1, _, _ = parsed
+        col, row0 = ord(c1[0]) - ord("A"), r1 - 1
+        grid = self.status if sheet == STATUS_TAB else self.tracker
         for r, values in enumerate(args.get("values") or []):
             while len(grid) <= row0 + r:
                 grid.append([])
@@ -147,9 +150,8 @@ def _tool_use(i: int, name: str, args: dict) -> SimpleNamespace:
 class ScriptedLLM:
     """Mimics client.messages.create(): plans all writes on turn 1, then ends."""
 
-    def __init__(self, sheet_id: str = "local-sheet"):
+    def __init__(self):
         self.messages = self
-        self.sheet_id = sheet_id
         self.turn = 0
 
     def create(self, *, messages: list[dict], **_: Any) -> SimpleNamespace:
@@ -169,9 +171,9 @@ class ScriptedLLM:
             else:
                 stage, nxt, note = _classify(e["body"], row["Stage"])
                 cells = [stage, data["today"], nxt, note]
-            uses.append(_tool_use(len(uses), "GOOGLESHEETS_BATCH_UPDATE", {
-                "spreadsheet_id": self.sheet_id, "sheet_name": "Tracker",
-                "first_cell_location": f"E{row['row_number']}", "values": [cells]}))
+            n = row["row_number"]  # spreadsheet_id and value_input_option are filled in by the executor
+            uses.append(_tool_use(len(uses), "GOOGLESHEETS_VALUES_UPDATE", {
+                "range": f"Tracker!E{n}:H{n}", "values": [cells]}))
         for cid in data["stale_candidates"]:
             if cid in skip_draft:
                 continue
@@ -196,8 +198,9 @@ def local_tool_schemas() -> list[dict]:
                            ["recipient_email", "subject", "body"])},
         {"name": "GOOGLESHEETS_BATCH_GET", "description": "Read ranges from the spreadsheet.",
          "input_schema": s({"spreadsheet_id": {"type": "string"}, "ranges": {"type": "array", "items": {"type": "string"}}}, ["ranges"])},
-        {"name": "GOOGLESHEETS_BATCH_UPDATE", "description": "Write a block of values starting at a cell.",
-         "input_schema": s({"spreadsheet_id": {"type": "string"}, "sheet_name": {"type": "string"},
-                            "first_cell_location": {"type": "string"}, "values": {"type": "array", "items": {"type": "array"}}},
-                           ["sheet_name", "first_cell_location", "values"])},
+        {"name": "GOOGLESHEETS_VALUES_UPDATE", "description": "Write values to an A1 range, e.g. 'Tracker!E5:H5'.",
+         "input_schema": s({"spreadsheet_id": {"type": "string"}, "range": {"type": "string"},
+                            "value_input_option": {"type": "string", "enum": ["RAW", "USER_ENTERED"]},
+                            "values": {"type": "array", "items": {"type": "array"}}},
+                           ["range", "values"])},
     ]

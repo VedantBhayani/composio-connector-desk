@@ -6,7 +6,7 @@ import json
 import os
 import re
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -43,10 +43,12 @@ def _scrub(line: str) -> str:
 
 
 class Ledger:
-    def __init__(self, path: Path | str, run_id: str, mode: str):
+    def __init__(self, path: Path | str, run_id: str, mode: str, day: str = ""):
         self.path = Path(path)
         self.run_id = run_id
         self.mode = mode
+        # The run's local "today" (YYYY-MM-DD). Idempotency keys on this, not on the UTC ts.
+        self.day = day or date.today().isoformat()
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def record(
@@ -62,6 +64,7 @@ class Ledger:
     ) -> dict:
         entry = {
             "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "day": self.day,
             "run_id": self.run_id,
             "mode": self.mode,
             "event": event,
@@ -99,12 +102,13 @@ def read_ledger(path: Path | str) -> list[dict]:
 
 
 def live_drafts_on(path: Path | str, day: str) -> set[str]:
-    """Recipients of live drafts that succeeded on `day` (YYYY-MM-DD, UTC), for idempotency."""
+    """Recipients of live drafts that succeeded on the run day `day` (YYYY-MM-DD, local), for
+    idempotency. Entries written before the `day` field existed fall back to the UTC ts date."""
     entries = read_ledger(path)
     ok_calls = {e["call_id"] for e in entries if e.get("event") == "result" and e["result_status"] == "ok"}
     return {
         str(e["args_summary"].get("recipient_email", "")).lower()
         for e in entries
         if e.get("event") == "decision" and e["mode"] == "live" and e["tool"] == "GMAIL_CREATE_EMAIL_DRAFT"
-        and e["call_id"] in ok_calls and e["ts"][:10] == day
+        and e["call_id"] in ok_calls and e.get("day", e["ts"][:10]) == day
     }
