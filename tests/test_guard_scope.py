@@ -239,6 +239,29 @@ def test_no_draft_to_anyone_who_emailed_this_run_even_if_unmatched(tmp_path):
     assert "not a stale follow-up candidate" in report.refused_calls[0]
 
 
+def test_model_never_sees_the_fields_the_system_fills_in(tmp_path):
+    """Composio's live schema marks value_input_option required, so a model fills it in
+    (live dry run: USER_ENTERED, refused). The model's copy of the schema drops both fields."""
+    live_like = {"name": "GOOGLESHEETS_VALUES_UPDATE", "description": "Update values.", "input_schema": {
+        "type": "object", "required": ["spreadsheet_id", "range", "value_input_option", "values"],
+        "properties": {k: {"type": "string"} for k in ("spreadsheet_id", "range", "value_input_option", "values")}}}
+    llm = RecordingLLM()
+    llm.create_orig = llm.create
+
+    def capture(*, tools, **kw):
+        llm.schemas = tools
+        return llm.create_orig(tools=tools, **kw)
+
+    llm.create = capture
+    run_agent(mode="local", llm=llm, model="m", backend=LocalBackend(TODAY), tools=[live_like],
+              ledger=Ledger(tmp_path / "l.jsonl", "r1", "local"), today=TODAY, stale_days=7,
+              gmail_label="l", sheet_id="sheet-1", out=lambda s: None)
+    schema = llm.schemas[0]["input_schema"]
+    assert set(schema["properties"]) == {"range", "values"}
+    assert schema["required"] == ["range", "values"]
+    assert live_like["input_schema"]["required"][0] == "spreadsheet_id"  # the original is not mutated
+
+
 def test_code_can_write_status_tab(tmp_path):
     ctx, backend, led = setup(tmp_path)
     guarded_execute("GOOGLESHEETS_VALUES_UPDATE", status_write(range="Status!A1:B1", values=[["Run", "r1"]]),

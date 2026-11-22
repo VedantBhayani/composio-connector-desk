@@ -115,7 +115,7 @@ def run_agent(
 
     # 2. Model loop. The model only proposes; guarded_execute decides. Code already did the
     # reads, so the model is offered the write tools only.
-    model_tools = [t for t in tools if t.get("name") not in READ_ONLY_TOOLS]
+    model_tools = [model_tool_schema(t) for t in tools if t.get("name") not in READ_ONLY_TOOLS]
     messages: list[dict] = [{"role": "user", "content": build_user_message(run_data)}]
     final_text, refused, n_calls = "", [], 0
     for _ in range(MAX_TURNS):
@@ -173,6 +173,19 @@ def run_agent(
         except PolicyError as exc:  # should not happen; logged by the executor
             out(f"status write refused: {exc}")
     return RunReport(ledger.run_id, mode, summary, final_text, refused)
+
+
+# Filled in by the executor (pin_spreadsheet). Hidden from the model so it does not guess them.
+SYSTEM_FILLED_ARGS = frozenset({"spreadsheet_id", "value_input_option"})
+
+
+def model_tool_schema(tool: dict) -> dict:
+    """A copy of the tool definition without the arguments the system fills in."""
+    schema = dict(tool.get("input_schema") or {})
+    schema["properties"] = {k: v for k, v in (schema.get("properties") or {}).items() if k not in SYSTEM_FILLED_ARGS}
+    if "required" in schema:
+        schema["required"] = [k for k in schema["required"] if k not in SYSTEM_FILLED_ARGS]
+    return {**tool, "input_schema": schema}
 
 
 def read_warnings(emails: list, gmail_label: str) -> list[str]:
