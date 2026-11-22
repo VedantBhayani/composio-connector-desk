@@ -81,3 +81,13 @@ def test_extract_values_from_nested_response():
 def test_normalize_gmail_shape():
     e = normalize_email({"messageId": "m1", "sender": "Dana Lee <DANA@acmecrm.example.com>", "subject": "s", "messageText": "b"})
     assert (e.id, e.sender, e.body) == ("m1", "dana@acmecrm.example.com", "b")
+
+
+def test_self_sent_seed_emails_still_match_by_app_name(rows):
+    """Seeded by hand, every email's real sender is the throwaway inbox itself."""
+    expected = {"fixture-01": "C001", "fixture-02": "C002", "fixture-03": "C003", "fixture-04": "C004",
+                "fixture-05": None, "fixture-06": "C008"}
+    for e in load_email_fixtures(TODAY):
+        e["from"] = "Throwaway <throwaway.test@gmail.com>"
+        res = match_email(normalize_email(e), rows)
+        assert (res.row.connector_id if res.row else None) == expected[e["id"]], e["id"]
