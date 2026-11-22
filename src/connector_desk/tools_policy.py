@@ -252,6 +252,11 @@ def _validate_sheet_write(args: dict, ctx: Any) -> None:
         raise ArgsRejectedError(
             f"sheet write rejected: {row.connector_id} cannot move backwards from {row.stage!r} to {stage!r}"
         )
+    marks_suspicious = str(cells[3]).strip().lower().startswith("suspicious:")
+    if (row.connector_id in ctx.stage_locked_rows or marks_suspicious) and stage != row.stage:
+        raise ArgsRejectedError(
+            f"sheet write rejected: {row.connector_id} stage is locked at {row.stage!r} (suspicious email this run)"
+        )
     if len(cells) >= 2 and str(cells[1]).strip() != ctx.today.isoformat():
         raise ArgsRejectedError(f"sheet write rejected: Last_Touched must be today ({ctx.today.isoformat()})")
     for name, limit, value in (("Next_Action", NEXT_ACTION_MAX, cells[2:3]), ("Notes", NOTES_MAX, cells[3:4])):

@@ -19,14 +19,10 @@ from .local_mode import LocalBackend, ScriptedLLM, local_tool_schemas, write_sam
 
 # Printed after every run. Update it only from real, recorded live runs.
 NOT_TESTED_LIVE = [
-    "Running a full live session (connect, then fetch/draft/update) with this config",
-    "Exact tool slugs and argument names for Gmail/Sheets (run `connector_desk schemas` to check them)",
-    "Gmail fetch by 'label:<GMAIL_LABEL>' query, whether bodies arrive by default, and the response shape",
-    "Sheets batch-get/batch-update argument shapes and the Status tab write",
-    "A real model (any provider) on email 06 (prompt injection) and on matching emails 01-05",
-    "The OpenAI-compatible adapter against real OpenRouter / Mistral endpoints",
-    "Draft idempotency across live runs (ledger-based) and draft wording quality",
-    "`connect` OAuth flow for gmail and googlesheets",
+    "The C008 stage-lock fix in a live run (added after live run 9135a3c3; covered offline)",
+    "Draft idempotency across two live runs on the same day (ledger-based)",
+    "The Mistral endpoint and the Anthropic provider (live runs used OpenRouter only)",
+    "Volume: more than 6 emails, more than 10 tracker rows, more than one model",
 ]
 
 

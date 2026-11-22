@@ -49,6 +49,8 @@ class RunContext:
     writable_rows: set[str] = field(default_factory=set)
     # Connector_IDs that are stale and untouched this run: the only rows the model may draft to.
     draftable_rows: set[str] = field(default_factory=set)
+    # Connector_IDs whose matched email looks like instructions to the agent: stage frozen this run.
+    stage_locked_rows: set[str] = field(default_factory=set)
     tracker_tab: str = TRACKER_TAB
     status_tab: str = STATUS_TAB
     drafted: set[tuple[str, str]] = field(default_factory=set)  # (connector_id, iso date)

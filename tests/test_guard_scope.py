@@ -168,6 +168,41 @@ def test_tracker_range_must_be_exactly_one_row_e_to_h(tmp_path, rng):
     assert backend.calls == []
 
 
+SUSPICIOUS = "suspicious: contains instructions to the agent"
+
+
+def test_a_row_flagged_by_the_code_heuristic_keeps_its_stage(tmp_path):
+    """Live run 9135a3c3: the model noted C008 as suspicious but still advanced its stage."""
+    ctx, backend, led = setup(tmp_path)
+    ctx.stage_locked_rows = {"C008"}
+    with pytest.raises(PolicyError, match="stage is locked"):
+        model("GOOGLESHEETS_VALUES_UPDATE", row_write(cells=["Partner verification", TODAY.isoformat(), "x", "y"]),
+              ctx, backend, led)
+    assert backend.calls == []
+
+
+def test_a_write_that_marks_its_own_row_suspicious_cannot_change_the_stage(tmp_path):
+    ctx, backend, led = setup(tmp_path)
+    with pytest.raises(PolicyError, match="stage is locked"):
+        model("GOOGLESHEETS_VALUES_UPDATE",
+              row_write(cells=["Partner verification", TODAY.isoformat(), "Human review: suspicious email", SUSPICIOUS]),
+              ctx, backend, led)
+    model("GOOGLESHEETS_VALUES_UPDATE",
+          row_write(cells=["Sandbox credentials", TODAY.isoformat(), "Human review: suspicious email", SUSPICIOUS]),
+          ctx, backend, led)
+    assert len(backend.calls) == 1
+
+
+def test_the_agent_locks_rows_whose_email_the_heuristic_flags(tmp_path):
+    backend = LocalBackend(TODAY)
+    report = run_agent(mode="local", llm=BulkEditLLM(), model="m", backend=backend, tools=local_tool_schemas(),
+                       ledger=Ledger(tmp_path / "l.jsonl", "r1", "local"), today=TODAY, stale_days=7,
+                       gmail_label="l", sheet_id="sheet-1", out=lambda s: None)
+    # BulkEditLLM moves every row to Partner verification; C008 (email 06, flagged) must be refused now.
+    assert "C008" not in report.summary["rows_changed"]
+    assert any("C008" in r and "stage is locked" in r for r in report.refused_calls)
+
+
 class RecordingLLM:
     """Ends immediately; records which tools it was offered."""
 
@@ -208,9 +243,10 @@ def test_bulk_edit_through_the_agent_loop_only_reaches_matched_rows(tmp_path):
     report = run_agent(mode="local", llm=BulkEditLLM(), model="m", backend=backend, tools=local_tool_schemas(),
                        ledger=Ledger(tmp_path / "l.jsonl", "r1", "local"), today=TODAY, stale_days=7,
                        gmail_label="l", sheet_id="sheet-1", out=lambda s: None)
-    # Emails matched C001-C004 and C008; every other row's write is refused.
-    assert report.summary["rows_changed"] == ["C001", "C002", "C003", "C004", "C008"]
-    assert len(report.refused_calls) == 5  # C005 (Live), C006, C007, C009, C010
+    # Emails matched C001-C004 and C008; every other row's write is refused, and C008's
+    # stage is locked because its email (06) is flagged as instructions to the agent.
+    assert report.summary["rows_changed"] == ["C001", "C002", "C003", "C004"]
+    assert len(report.refused_calls) == 6  # C005 (Live), C006, C007, C008 (locked), C009, C010
 
 
 class DraftToLLM:

@@ -97,6 +97,7 @@ def run_agent(
              and r.connector_id not in matched_ids | drafted_ids and r.email not in senders]
     ctx.draftable_rows = set(stale)
     heuristic_flags = [e.id for e in emails if looks_like_agent_instructions(e.body + " " + e.subject)]
+    ctx.stage_locked_rows = {matches[eid].row.connector_id for eid in heuristic_flags if matches[eid].row}
 
     run_data = {
         "today": today.isoformat(),

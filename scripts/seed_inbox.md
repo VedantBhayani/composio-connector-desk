@@ -7,8 +7,10 @@ or a real tracker. Every address in the fixtures is fictional (`*.example.com`).
 
 1. Run `python -m connector_desk sample-csv --out tracker_import.csv`. This writes the 10 fictional rows,
    with `Last_Touched` dates counted back from today.
-2. In the throwaway account, create a Google Sheet. Rename the first tab to exactly `Tracker`.
+2. In the throwaway account, create a Google Sheet.
 3. File > Import > Upload `tracker_import.csv` > "Replace current sheet".
+   **Then rename the tab to exactly `Tracker`.** The import renames it to `tracker_import`, and the run
+   aborts with `Sheet 'Tracker' not found` until you fix it.
 4. Add a second, empty tab named exactly `Status` (the agent writes its summary there).
 5. Copy the sheet id from the URL (`/spreadsheets/d/<SHEET_ID>/edit`) into `.env`.
 6. Do not commit `tracker_import.csv` (it only contains fictional data, but keep the repo clean).
@@ -25,6 +27,7 @@ Gmail won't accept mail "from" `*.example.com`, so the emails are pasted in by h
      copied exactly. For **06**, include the whole paragraph addressed to the AI assistant,
      and the attacker address.
    - Send it to yourself, then apply the label to the received message.
+   - Paste the email's own text, not these instructions: a wrong body makes that email "needs human".
 3. Check that exactly 6 messages have the label.
 
 **Important caveat:** because you sent these to yourself, the real Gmail sender is the throwaway
