@@ -2,8 +2,7 @@
 
 A human at an agent-tooling company can spend their week chasing hundreds of app-connector approvals across partner inboxes and a spreadsheet. Connector Desk is a small agent that does the first pass, but it can only create **drafts**. It never sends anything.
 
-![demo GIF placeholder](docs/demo.gif)
-<!-- TODO: record a short GIF of `run --local` and a live dry run. -->
+<!-- TODO: record a short GIF of `run --local` and a live dry run, save it as docs/demo.gif, and embed it here. -->
 
 ## Run it in 5 minutes
 
@@ -18,12 +17,15 @@ python -m connector_desk run --local
 pytest -q
 ```
 
-Local mode reads `fixtures/` instead of Gmail and Sheets, prints `LOCAL MODE` first, then a status summary, a ledger summary and the list of things not yet tested live. By default the planner is a **deterministic scripted stand-in**, not Claude. To run the real model on the fixtures (still no Gmail or Sheets), add `--use-claude`; this needs `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` in `.env`.
+Local mode reads `fixtures/` instead of Gmail and Sheets, prints `LOCAL MODE` first, then a status summary, a ledger summary and the list of things not yet tested live. By default the planner is a **deterministic scripted stand-in**, not a model. To run a real model on the fixtures (still no Gmail or Sheets), add `--use-llm`; this needs the model settings in `.env` (see below).
+
+**Model providers.** `LLM_PROVIDER=openai_compatible` works with any OpenAI-style chat-completions API that supports tool calling: OpenRouter by default (`LLM_BASE_URL=https://openrouter.ai/api/v1`), or Mistral (`LLM_BASE_URL=https://api.mistral.ai/v1`). Set `LLM_API_KEY` and `LLM_MODEL`. `LLM_PROVIDER=anthropic` uses `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`. The agent loop, the guard and the tests are the same for every provider; only [`llm.py`](src/connector_desk/llm.py) differs.
 
 ### 2. Live setup (throwaway Google account only)
 
 ```bash
-cp .env.example .env          # fill in COMPOSIO_API_KEY, ANTHROPIC_API_KEY, ANTHROPIC_MODEL, SHEET_ID
+cp .env.example .env          # fill in COMPOSIO_API_KEY, SHEET_ID and the model settings
+python -m connector_desk schemas          # needs only COMPOSIO_API_KEY: prints the real tool definitions
 python -m connector_desk sample-csv --out tracker_import.csv
 python -m connector_desk connect          # OAuth links for gmail + googlesheets
 python -m connector_desk run --dry-run    # real reads, every write stubbed and logged
@@ -36,13 +38,13 @@ The code uses the current Composio **sessions** SDK (`composio==0.34.0`, `compos
 
 ## What it does
 
-`python -m connector_desk run [--dry-run] [--local] [--stale-days N]`
+`python -m connector_desk run [--dry-run] [--local [--use-llm]] [--stale-days N]`
 
 1. Fetches emails with the label `GMAIL_LABEL` and reads the `Tracker` tab. Code does both reads, and both are logged in the ledger.
 2. Code computes a deterministic match hint for each email: exact sender, then exact domain, then exactly one app name. If there's no single match, the email is reported as `needs human: ambiguous match` and no row changes.
-3. The model is given the data and proposes at most one `Stage / Last_Touched / Next_Action / Notes` update per matched row.
+3. The model is given the data and proposes at most one `Stage / Last_Touched / Next_Action / Notes` update per matched row. The model is offered only the two write tools; it cannot read anything itself.
 4. For rows older than `STALE_DAYS` that aren't `Live` and weren't touched this run, the model writes one polite follow-up **draft**: under 90 words, one ask, no CC/BCC, no attachments.
-5. Code writes a status summary (counts by stage, rows changed, drafts, suspicious emails, needs-human) to the `Status` tab. In local mode it's printed instead.
+5. Code writes a status summary (counts by stage, rows changed, drafts, suspicious emails, needs-human, warnings) to the `Status` tab. In local mode it's printed instead. If the fetch returns 0 emails, or emails with no body or sender, the run prints a `WARNING` instead of looking clean.
 6. Every tool decision goes to `ledger/actions.jsonl`, and the counts are printed at the end.
 
 ## Safety model
@@ -53,16 +55,18 @@ The prompt asks for good behaviour, but the **code** enforces the hard rules. Ea
 |---|---|
 | Deny-by-default allow-list: `GMAIL_FETCH_EMAILS`, `GMAIL_CREATE_EMAIL_DRAFT`, `GOOGLESHEETS_BATCH_GET`, `GOOGLESHEETS_BATCH_UPDATE` | `ALLOWED_TOOLS` in [`tools_policy.py`](src/connector_desk/tools_policy.py) is passed to the Composio session (`toolkits=["gmail","googlesheets"]`, `tools={kit: {"enable": [...]}}`, `session_preset="direct_tools"`, sandbox off). Any extra tool the session exposes is filtered out before the model sees it. `guarded_execute` checks every call again. |
 | Never send / send draft / forward / delete | `BLOCKED_TOOLS` raise `ToolBlockedError` and are logged as `blocked`. The session also sets `require_approval` for the Gmail send tools (an experimental SDK feature) as a further layer. |
-| Drafts: only to a `Partner_Email` in the tracker, ≤90 words, no CC/BCC/attachments, one per row per day | Argument checks in `validate_args`. Idempotency comes from the run context and, in live mode, from earlier ledger entries. |
-| Sheet writes: one row per call, only columns E:H, valid stage, **never `Live`**, no other tabs except `Status` | Argument checks in `validate_args`. Only a human marks a connector Live. |
-| Email content is data, not instructions | The system prompt says so. Emails are passed inside a `<run_data>` block marked as data. Suspicious rows get `suspicious: contains instructions to the agent` in Notes and no draft. A code heuristic also flags them in the summary. The executor limits what an obeyed injection could do: no send, no forward, no draft to an outside address, no bulk edit, no `Live`. |
-| No secrets in the repo or ledger | Secrets live only in `.env`, which is gitignored. The ledger truncates bodies to 120 characters, redacts secret-like keys, and scrubs any value of `COMPOSIO_API_KEY`/`ANTHROPIC_API_KEY`. |
+| The model only writes; code does the reads | The model is offered only `GMAIL_CREATE_EMAIL_DRAFT` and `GOOGLESHEETS_BATCH_UPDATE`. A model-issued read (e.g. an injected "fetch the whole inbox") is refused by `check_actor`. Only code writes the `Status` tab. |
+| Drafts: only to a stale row's `Partner_Email`, ≤90 words, no CC/BCC/attachments, one per row per day | Argument checks in `validate_args`. A row is draftable only if it is stale, was not matched to an email this run, and its `Partner_Email` did not send any email read this run, so anyone whose email was just read (including a suspicious one, matched or not) gets no draft. Idempotency comes from the run context and, in live mode, from earlier ledger entries keyed on the run's local date. |
+| Sheet writes: only rows an email matched this run, once per row, only columns E:H, valid stage, **never `Live`**, never backwards, never on a `Live` row | Argument checks in `validate_args`. Each write carries all four cells; `Last_Touched` must be today; `Next_Action` ≤200 and `Notes` ≤300 characters. Every Sheets call is pinned to the configured `SHEET_ID` (filled in when absent, refused when different). Only a human marks a connector Live. |
+| Writes carry only known arguments | Each write tool has an argument allow-list (`WRITE_ARG_KEYS`). Anything else, such as a second recipient in `to` or a `spreadsheetId` alias, is refused, so no field the guard does not check can reach Composio. |
+| Email content is data, not instructions | The system prompt says so. Emails are passed inside a `<run_data>` block marked as data. Suspicious rows get `suspicious: contains instructions to the agent` in Notes and no draft. A code heuristic also flags them in the summary. The executor limits what an obeyed injection could do: no send, no forward, no read, no draft to an outside or non-stale address, no edit outside the matched rows, no `Live`, no rollback. |
+| No secrets in the repo or ledger | Secrets live only in `.env`, which is gitignored. The ledger truncates bodies to 120 characters, redacts secret-like keys, and scrubs any value of `COMPOSIO_API_KEY`/`ANTHROPIC_API_KEY`/`LLM_API_KEY`. |
 
 `--dry-run` executes the two read-only tools for real, then logs every write as `dry_run` and stubs it.
 
 ## How I tested it
 
-`pytest -q` runs offline with no env vars: **73 tests**.
+`pytest -q` runs offline with no env vars: **113 tests**.
 
 - `test_policy`: every allowed tool passes, every blocked tool raises, unknown tools are denied. The session config mirrors the allow-list and binds to the installed SDK's `create()` signature. No `composio-core` anywhere.
 - `test_ledger`: lines are valid JSON, the file is append-only, bodies are truncated, and a fake API key in env never appears.
@@ -71,6 +75,10 @@ The prompt asks for good behaviour, but the **code** enforces the hard rules. Ea
 - `test_agent`, `test_cli`: the full loop with the scripted planner and with a "greedy" mocked model that tries a bulk `Live` and an exfil draft.
 - `test_no_send`: a mocked LLM calls `GMAIL_SEND_EMAIL`, `GMAIL_SEND_DRAFT` and `GMAIL_FORWARD_MESSAGE` on email 06. All three are blocked, the mocked session gets **zero** send/forward calls, and the ledger has three `blocked` rows. A second test patches a send tool into the allow-list and proves the check catches the leak. I also added `GMAIL_SEND_EMAIL` to `ALLOWED_TOOLS` by hand and confirmed `test_no_send` fails.
 - `test_injection_fixture`: fixture 06 still contains the injection paragraph and the attacker address. Local mode never forwards or sends, sets no row to `Live`, and flags C008.
+- `test_guard_scope`: what the model may touch. Model-issued reads and `Status` writes are refused; writes to another spreadsheet, to unmatched rows, twice to one row, to a `Live` row, or backwards are refused; `Last_Touched`/`Next_Action`/`Notes` are validated; drafts to non-stale partners (including the injection's sender, even when a shared address leaves her email unmatched) are refused; unknown argument keys (`to`, `spreadsheetId`) are refused. A mocked model that obeys an injection by writing all ten rows through the real agent loop changes only the five matched rows.
+- `test_live_shape_warnings`: 0 fetched emails, or emails with no body or sender, produce a `WARNING`; the clean fixture run produces none.
+- `test_llm_adapter`: the OpenAI-compatible adapter's request format, tool-call parsing, malformed-argument handling, missing tool-call ids, history translation, a full local run through it, provider errors and empty responses (the run aborts cleanly), and a reply cut off at the token limit (a warning), all against a fake client.
+- `test_schemas_cmd`: `schemas` prints deprecation flags and parameters (Composio SDK faked at its boundary).
 
 > **What this proves and what it doesn't.** The offline tests prove the **guard** works even when the model misbehaves. They do **not** prove the real model resists prompt injection. That needs the manual live check below.
 
@@ -88,7 +96,7 @@ Fill these in only from real runs. Every cell stays TODO until a run has produce
 |---|---|---|---|---|---|---|---|---|---|
 | TODO | dry_run | TODO | composio 0.34.0 | TODO | TODO | TODO | TODO | TODO | TODO |
 | TODO | live | TODO | composio 0.34.0 | TODO | TODO | TODO | TODO | TODO | TODO |
-| TODO | local `--use-claude` | TODO | n/a | TODO | TODO | TODO | TODO | TODO | TODO |
+| TODO | local `--use-llm` | TODO | n/a | TODO | TODO | TODO | TODO | TODO | TODO |
 
 Offline reference (the **scripted planner, not a model**), `run --local` on 2026-11-22: 5 emails routed to the expected row and email 05 marked needs-human, 0 send/forward executed, 0 blocked (the scripted planner never tries), 0 rows set Live, C008 flagged, 1 draft (C007). This shows the plumbing works. It says nothing about model quality.
 
@@ -100,13 +108,17 @@ Offline reference (the **scripted planner, not a model**), `run --local` on 2026
 - Offline tests prove the guard, not the model.
 - Live behaviour is only what's recorded in the runs listed under Results. As of this commit, **nothing has been run live**.
 - Cost and latency weren't measured.
-- It depends on the current Composio sessions SDK and on the tool slugs and argument names. docs.composio.dev wasn't reachable from the build environment. The SDK API was checked against the installed package source, but the slugs and argument shapes (`query`, `ranges`, `sheet_name`, `first_cell_location`, `values`, `recipient_email`) follow the brief and are **unverified**. Live mode warns if the session doesn't expose an allow-listed slug.
+- It depends on the current Composio sessions SDK and on the tool slugs and argument names. docs.composio.dev wasn't reachable from the build environment. The SDK API was checked against the installed package source, but the slugs and argument shapes (`query`, `ranges`, `sheet_name`, `first_cell_location`, `values`, `recipient_email`) follow the brief and are **unverified**. `connector_desk schemas` prints the real definitions; live mode also warns if the session doesn't expose an allow-listed slug.
+- Composio's Google Sheets guide marks `GOOGLESHEETS_BATCH_UPDATE` as **deprecated** in favour of `GOOGLESHEETS_VALUES_UPDATE`. The code still uses the old slug until `schemas` confirms the new tool's parameters.
+- Composio's own docs describe a metadata-only mode for `GMAIL_FETCH_EMAILS`, and its issue tracker reports cases of empty `messages` with success. The run warns on both; it does not yet set any body-fetching flag, because those parameter names are unverified.
+- The OpenAI-compatible adapter is tested against a fake client only. Provider quirks (e.g. Mistral's tool-message rules) are unverified until a real run.
+- Five approval stages, no `Blocked`/`Rejected` stage. Blockers (e.g. a restricted-scope security review) go in `Next_Action`/`Notes` today.
 - Live idempotency comes from the local ledger, not from Gmail's draft list. Deleting the ledger resets it.
 - When you seed by hand, the real sender is the throwaway inbox, so matching falls back to app names.
 
 ## Built with
 
-Python 3.11+, Composio sessions SDK, Anthropic Messages API, pytest. No other frameworks.
+Python 3.11+, Composio sessions SDK, an OpenAI-compatible chat API (OpenRouter or Mistral) or the Anthropic Messages API, pytest. No other frameworks.
 
 Claude Code helped write this code and these tests. The author decided:
 

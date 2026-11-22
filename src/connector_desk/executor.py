@@ -13,7 +13,7 @@ from typing import Any, Protocol
 from .config import STATUS_TAB, TRACKER_TAB
 from .ledger import Ledger
 from .sheet_schema import WRITABLE_COLUMNS, TrackerRow
-from .tools_policy import READ_ONLY_TOOLS, PolicyError, check_tool, validate_args
+from .tools_policy import READ_ONLY_TOOLS, PolicyError, check_actor, check_tool, pin_spreadsheet, validate_args
 
 
 class Backend(Protocol):
@@ -43,6 +43,11 @@ class RunContext:
     mode: str  # live | dry_run | local
     today: date
     rows: list[TrackerRow] = field(default_factory=list)
+    sheet_id: str = ""
+    # Connector_IDs the code matched to an email this run: the only rows the model may write.
+    writable_rows: set[str] = field(default_factory=set)
+    # Connector_IDs that are stale and untouched this run: the only rows the model may draft to.
+    draftable_rows: set[str] = field(default_factory=set)
     tracker_tab: str = TRACKER_TAB
     status_tab: str = STATUS_TAB
     drafted: set[tuple[str, str]] = field(default_factory=set)  # (connector_id, iso date)
@@ -60,7 +65,7 @@ class RunContext:
     def apply_write(self, tool: str, args: dict) -> None:
         """Mirror an accepted write into the context so summaries reflect it (also in dry run)."""
         if tool == "GMAIL_CREATE_EMAIL_DRAFT":
-            row = self.row_by_email(args.get("recipient_email") or args.get("to") or "")
+            row = self.row_by_email(args.get("recipient_email") or "")
             if row:
                 self.drafted.add((row.connector_id, self.today.isoformat()))
                 self.drafts_created.append(row.connector_id)
@@ -80,12 +85,20 @@ class RunContext:
                 self.suspicious_rows.add(row.connector_id)
 
 
-def guarded_execute(tool: str, args: dict | None, *, backend: Backend, ledger: Ledger, ctx: RunContext) -> dict[str, Any]:
-    """Execute one tool call under policy. Raises PolicyError if refused (after logging it)."""
+def guarded_execute(
+    tool: str, args: dict | None, *, backend: Backend, ledger: Ledger, ctx: RunContext, actor: str = "model"
+) -> dict[str, Any]:
+    """Execute one tool call under policy. Raises PolicyError if refused (after logging it).
+
+    actor is "model" for calls the model proposed (the default, and the stricter rules) or
+    "code" for the program's own reads and its Status write.
+    """
     args = dict(args or {})
     call_id = uuid.uuid4().hex[:10]
     try:
         reason = check_tool(tool)
+        check_actor(tool, args, actor, ctx)
+        pin_spreadsheet(tool, args, ctx)
         validate_args(tool, args, ctx)
     except PolicyError as exc:
         ledger.record(tool=tool, args=args, decision="blocked", reason=str(exc), result_status="not_executed", call_id=call_id)

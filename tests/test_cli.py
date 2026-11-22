@@ -43,3 +43,33 @@ def test_sample_csv(tmp_path, monkeypatch):
     assert main(["sample-csv", "--out", str(out)]) == 0
     text = out.read_text()
     assert "today-" not in text and "C010" in text
+
+
+LLM_VARS = ("LLM_PROVIDER", "LLM_API_KEY", "LLM_MODEL", "LLM_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL")
+
+
+def _env(monkeypatch, **values):
+    for k in LLM_VARS + ("COMPOSIO_API_KEY", "COMPOSIO_USER_ID", "SHEET_ID"):
+        monkeypatch.setenv(k, "")
+    for k, v in values.items():
+        monkeypatch.setenv(k, v)
+
+
+def test_openai_compatible_live_run_names_the_missing_llm_key(tmp_path, monkeypatch, capsys):
+    _env(monkeypatch, LLM_PROVIDER="openai_compatible", LLM_MODEL="some/model", COMPOSIO_API_KEY="c",
+         COMPOSIO_USER_ID="u", SHEET_ID="s")
+    assert main(["run", "--dry-run"]) == 2
+    err = capsys.readouterr().err
+    assert "LLM_API_KEY" in err and "ANTHROPIC" not in err
+
+
+def test_local_run_with_real_model_needs_the_providers_key(tmp_path, monkeypatch, capsys):
+    _env(monkeypatch, LLM_PROVIDER="openai_compatible", LLM_MODEL="some/model", LEDGER_PATH=str(tmp_path / "l.jsonl"))
+    assert main(["run", "--local", "--use-llm"]) == 2
+    assert "LLM_API_KEY" in capsys.readouterr().err
+
+
+def test_unknown_provider_is_rejected(tmp_path, monkeypatch, capsys):
+    _env(monkeypatch, LLM_PROVIDER="gpt-something", LEDGER_PATH=str(tmp_path / "l.jsonl"))
+    assert main(["run", "--local", "--use-llm"]) == 2
+    assert "LLM_PROVIDER" in capsys.readouterr().err

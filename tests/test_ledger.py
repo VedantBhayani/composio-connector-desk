@@ -54,3 +54,15 @@ def test_counts(tmp_path):
     led.record(tool="B", args={}, decision="blocked", reason="", result_status="not_executed")
     c = led.counts()
     assert c["allowed"] == 1 and c["blocked"] == 1 and c["total_decisions"] == 2 and c["executed_ok"] == 1
+
+
+def test_draft_idempotency_uses_the_runs_local_day_not_the_utc_timestamp(tmp_path):
+    """Near midnight the UTC date differs from the local date the run uses as 'today'."""
+    from connector_desk.ledger import live_drafts_on
+
+    led = Ledger(tmp_path / "l.jsonl", "r1", "live", day="2030-01-01")
+    led.record(tool="GMAIL_CREATE_EMAIL_DRAFT", args={"recipient_email": "Tom@x.example.com"},
+               decision="allowed", reason="", result_status="pending", call_id="c1")
+    led.record(tool="GMAIL_CREATE_EMAIL_DRAFT", args=None, decision="allowed", reason="",
+               result_status="ok", event="result", call_id="c1")
+    assert live_drafts_on(led.path, "2030-01-01") == {"tom@x.example.com"}

@@ -147,9 +147,8 @@ def _tool_use(i: int, name: str, args: dict) -> SimpleNamespace:
 class ScriptedLLM:
     """Mimics client.messages.create(): plans all writes on turn 1, then ends."""
 
-    def __init__(self, sheet_id: str = "local-sheet"):
+    def __init__(self):
         self.messages = self
-        self.sheet_id = sheet_id
         self.turn = 0
 
     def create(self, *, messages: list[dict], **_: Any) -> SimpleNamespace:
@@ -170,7 +169,7 @@ class ScriptedLLM:
                 stage, nxt, note = _classify(e["body"], row["Stage"])
                 cells = [stage, data["today"], nxt, note]
             uses.append(_tool_use(len(uses), "GOOGLESHEETS_BATCH_UPDATE", {
-                "spreadsheet_id": self.sheet_id, "sheet_name": "Tracker",
+                "sheet_name": "Tracker",  # spreadsheet_id is filled in by the executor
                 "first_cell_location": f"E{row['row_number']}", "values": [cells]}))
         for cid in data["stale_candidates"]:
             if cid in skip_draft:

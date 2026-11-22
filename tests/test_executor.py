@@ -28,7 +28,8 @@ class FakeSession:
 
 
 def setup(tmp_path, mode="live"):
-    ctx = RunContext("r1", mode, TODAY, rows=parse_rows(load_tracker_grid(TODAY), TODAY))
+    ctx = RunContext("r1", mode, TODAY, rows=parse_rows(load_tracker_grid(TODAY), TODAY), sheet_id="s",
+                     writable_rows={"C008"}, draftable_rows={"C007"})
     session = FakeSession()
     return ctx, session, ComposioBackend(session), Ledger(tmp_path / "l.jsonl", "r1", mode)
 
@@ -37,13 +38,13 @@ def draft(to="tom@garnetbilling.example.com", **extra):
     return {"recipient_email": to, "subject": "Following up", "body": "Hi Tom, any update on approval?", **extra}
 
 
-def run(tool, args, ctx, backend, led):
-    return guarded_execute(tool, args, backend=backend, ledger=led, ctx=ctx)
+def run(tool, args, ctx, backend, led, actor="model"):
+    return guarded_execute(tool, args, backend=backend, ledger=led, ctx=ctx, actor=actor)
 
 
 def test_allowed_call_executes_and_logs_two_lines(tmp_path):
     ctx, session, backend, led = setup(tmp_path)
-    res = run("GMAIL_FETCH_EMAILS", {"query": "label:x"}, ctx, backend, led)
+    res = run("GMAIL_FETCH_EMAILS", {"query": "label:x"}, ctx, backend, led, actor="code")
     assert res["successful"] and session.calls == [("GMAIL_FETCH_EMAILS", {"query": "label:x"})]
     assert [(e["event"], e["decision"], e["result_status"]) for e in led.entries()] == [
         ("decision", "allowed", "pending"), ("result", "allowed", "ok")]
@@ -67,7 +68,7 @@ def test_unknown_tool_denied(tmp_path):
 
 def test_dry_run_stubs_writes_but_runs_reads(tmp_path):
     ctx, session, backend, led = setup(tmp_path, "dry_run")
-    run("GOOGLESHEETS_BATCH_GET", {"ranges": ["Tracker!A1:H20"]}, ctx, backend, led)
+    run("GOOGLESHEETS_BATCH_GET", {"ranges": ["Tracker!A1:H20"]}, ctx, backend, led, actor="code")
     res = run("GMAIL_CREATE_EMAIL_DRAFT", draft(), ctx, backend, led)
     assert res["data"]["dry_run"] is True
     assert [c[0] for c in session.calls] == ["GOOGLESHEETS_BATCH_GET"]
@@ -131,5 +132,5 @@ def test_valid_row_write_updates_context(tmp_path):
 
 def test_status_tab_write_allowed(tmp_path):
     ctx, session, backend, led = setup(tmp_path)
-    run("GOOGLESHEETS_BATCH_UPDATE", write(1, [["Run", "r1"], ["Drafts", "1"]], sheet="Status", col="A"), ctx, backend, led)
+    run("GOOGLESHEETS_BATCH_UPDATE", write(1, [["Run", "r1"], ["Drafts", "1"]], sheet="Status", col="A"), ctx, backend, led, actor="code")
     assert len(session.calls) == 1

@@ -13,7 +13,7 @@ from .ledger import Ledger
 from .local_mode import looks_like_agent_instructions
 from .prompts import SYSTEM_PROMPT, build_user_message
 from .sheet_schema import extract_emails, extract_values, is_stale, match_email, parse_rows, stage_counts
-from .tools_policy import ALLOWED_TOOLS, PolicyError
+from .tools_policy import ALLOWED_TOOLS, READ_ONLY_TOOLS, PolicyError
 
 MAX_TURNS = 12
 MAX_TOOL_CALLS = 40
@@ -64,16 +64,19 @@ def run_agent(
     already_drafted: set[str] | None = None,
     out: Callable[[str], None] = print,
 ) -> RunReport:
-    ctx = RunContext(run_id=ledger.run_id, mode=mode, today=today)
+    ctx = RunContext(run_id=ledger.run_id, mode=mode, today=today, sheet_id=sheet_id)
 
-    def call(tool: str, args: dict) -> dict:
-        return guarded_execute(tool, args, backend=backend, ledger=ledger, ctx=ctx)
+    def call(tool: str, args: dict, actor: str = "code") -> dict:
+        return guarded_execute(tool, args, backend=backend, ledger=ledger, ctx=ctx, actor=actor)
 
     # 1. Read inputs in code (ledgered like every other call).
     fetched = call("GMAIL_FETCH_EMAILS", {"query": f"label:{gmail_label}", "max_results": 25})
     if not fetched.get("successful"):
         raise RunAborted(f"could not fetch emails: {fetched.get('error')}")
     emails = extract_emails(fetched.get("data"))
+    warnings = read_warnings(emails, gmail_label)
+    for w in warnings:
+        out(f"WARNING: {w}")
     sheet = call("GOOGLESHEETS_BATCH_GET", {"spreadsheet_id": sheet_id, "ranges": [f"{TRACKER_TAB}!A1:H200"]})
     if not sheet.get("successful"):
         raise RunAborted(f"could not read tracker: {sheet.get('error')}")
@@ -85,7 +88,13 @@ def run_agent(
 
     matches = {e.id: match_email(e, ctx.rows) for e in emails}
     matched_ids = {m.row.connector_id for m in matches.values() if m.row}
-    stale = [r.connector_id for r in ctx.rows if is_stale(r, today, stale_days) and r.connector_id not in matched_ids | drafted_ids]
+    ctx.writable_rows = set(matched_ids)
+    # Never follow up with someone whose email was just read, matched or not (e.g. a shared
+    # Partner_Email made the match ambiguous): a human reads their reply first.
+    senders = {e.sender for e in emails if e.sender}
+    stale = [r.connector_id for r in ctx.rows if is_stale(r, today, stale_days)
+             and r.connector_id not in matched_ids | drafted_ids and r.email not in senders]
+    ctx.draftable_rows = set(stale)
     heuristic_flags = [e.id for e in emails if looks_like_agent_instructions(e.body + " " + e.subject)]
 
     run_data = {
@@ -103,16 +112,24 @@ def run_agent(
         "stale_candidates": stale,
     }
 
-    # 2. Model loop. The model only proposes; guarded_execute decides.
+    # 2. Model loop. The model only proposes; guarded_execute decides. Code already did the
+    # reads, so the model is offered the write tools only.
+    model_tools = [t for t in tools if t.get("name") not in READ_ONLY_TOOLS]
     messages: list[dict] = [{"role": "user", "content": build_user_message(run_data)}]
     final_text, refused, n_calls = "", [], 0
     for _ in range(MAX_TURNS):
-        resp = llm.messages.create(model=model, max_tokens=4096, system=SYSTEM_PROMPT, tools=tools, messages=messages)
+        try:
+            resp = llm.messages.create(model=model, max_tokens=4096, system=SYSTEM_PROMPT, tools=model_tools, messages=messages)
+        except Exception as exc:  # provider/network error: stop cleanly, ledger and footer still print
+            raise RunAborted(f"model call failed: {type(exc).__name__}: {exc}") from exc
         blocks = [_block_to_dict(b) for b in resp.content]
         messages.append({"role": "assistant", "content": blocks})
         uses = [b for b in blocks if b["type"] == "tool_use"]
         if not uses:
             final_text = "\n".join(b["text"] for b in blocks if b["type"] == "text").strip()
+            if getattr(resp, "stop_reason", None) == "max_tokens":
+                warnings.append("the model's final reply was cut off at the token limit")
+                out(f"WARNING: {warnings[-1]}")
             break
         results = []
         for u in uses:
@@ -120,7 +137,7 @@ def run_agent(
             if n_calls > MAX_TOOL_CALLS:
                 raise RunAborted(f"model exceeded {MAX_TOOL_CALLS} tool calls")
             try:
-                r = call(u["name"], u["input"])
+                r = call(u["name"], u["input"], actor="model")
                 content, is_error = json.dumps(r, default=str)[:TOOL_RESULT_CHARS], not r.get("successful")
             except PolicyError as exc:
                 refused.append(f"{u['name']}: {exc}")
@@ -143,6 +160,7 @@ def run_agent(
         "suspicious_emails_heuristic": heuristic_flags,
         "needs_human": [f"{eid}: {m.note}" for eid, m in matches.items() if not m.row],
         "refused_tool_calls": len(refused),
+        "warnings": warnings,
     }
     if mode != "local":
         try:
@@ -155,6 +173,19 @@ def run_agent(
     return RunReport(ledger.run_id, mode, summary, final_text, refused)
 
 
+def read_warnings(emails: list, gmail_label: str) -> list[str]:
+    """Loud signs that the fetch 'succeeded' but read nothing useful (wrong label, a
+    metadata-only response, or a changed response shape)."""
+    if not emails:
+        return [f"fetched 0 emails under label:{gmail_label}; check the label and the fetch response shape"]
+    warnings = []
+    for name in ("body", "sender"):
+        empty = [e.id or "?" for e in emails if not getattr(e, name).strip()]
+        if empty:
+            warnings.append(f"emails with no {name}: {', '.join(empty)} (metadata-only fetch or changed response shape?)")
+    return warnings
+
+
 def status_grid(s: dict[str, Any]) -> list[list[str]]:
     grid = [["Connector Desk status", s["date"]], ["Run id", s["run_id"]], ["Mode", s["mode"]], ["Stage", "Count"]]
     grid += [[stage, str(n)] for stage, n in s["stage_counts"].items()]
@@ -164,6 +195,7 @@ def status_grid(s: dict[str, Any]) -> list[list[str]]:
         ["Suspicious emails", ", ".join(s["suspicious_rows"]) or "none"],
         ["Needs human", "; ".join(s["needs_human"]) or "none"],
         ["Refused tool calls", str(s["refused_tool_calls"])],
+        ["Warnings", "; ".join(s["warnings"]) or "none"],
     ]
     return grid
 
@@ -178,6 +210,7 @@ def format_summary(s: dict[str, Any]) -> str:
         f"  suspicious (code heuristic): {', '.join(s['suspicious_emails_heuristic']) or 'none'}",
         f"  needs human: {'; '.join(s['needs_human']) or 'none'}",
         f"  refused tool calls: {s['refused_tool_calls']}",
+        f"  warnings: {'; '.join(s['warnings']) or 'none'}",
     ]
     return "\n".join(lines)
 
