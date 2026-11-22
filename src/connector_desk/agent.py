@@ -70,7 +70,8 @@ def run_agent(
         return guarded_execute(tool, args, backend=backend, ledger=ledger, ctx=ctx, actor=actor)
 
     # 1. Read inputs in code (ledgered like every other call).
-    fetched = call("GMAIL_FETCH_EMAILS", {"query": f"label:{gmail_label}", "max_results": 25})
+    fetched = call("GMAIL_FETCH_EMAILS", {"query": f"label:{gmail_label}", "max_results": 25,
+                                         "verbose": True, "include_payload": True})  # bodies, not metadata only
     if not fetched.get("successful"):
         raise RunAborted(f"could not fetch emails: {fetched.get('error')}")
     emails = extract_emails(fetched.get("data"))
@@ -164,9 +165,10 @@ def run_agent(
     }
     if mode != "local":
         try:
-            call("GOOGLESHEETS_BATCH_UPDATE", {
-                "spreadsheet_id": sheet_id, "sheet_name": STATUS_TAB, "first_cell_location": "A1",
-                "values": status_grid(summary),
+            grid = status_grid(summary)
+            call("GOOGLESHEETS_VALUES_UPDATE", {
+                "spreadsheet_id": sheet_id, "range": f"{STATUS_TAB}!A1:B{len(grid)}",
+                "values": grid,
             })
         except PolicyError as exc:  # should not happen; logged by the executor
             out(f"status write refused: {exc}")

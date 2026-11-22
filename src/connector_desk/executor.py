@@ -13,7 +13,8 @@ from typing import Any, Protocol
 from .config import STATUS_TAB, TRACKER_TAB
 from .ledger import Ledger
 from .sheet_schema import WRITABLE_COLUMNS, TrackerRow
-from .tools_policy import READ_ONLY_TOOLS, PolicyError, check_actor, check_tool, pin_spreadsheet, validate_args
+from .tools_policy import (READ_ONLY_TOOLS, SHEET_WRITE_TOOLS, PolicyError, check_actor, check_tool, parse_range,
+                           pin_spreadsheet, range_sheet, validate_args)
 
 
 class Backend(Protocol):
@@ -69,8 +70,8 @@ class RunContext:
             if row:
                 self.drafted.add((row.connector_id, self.today.isoformat()))
                 self.drafts_created.append(row.connector_id)
-        elif tool == "GOOGLESHEETS_BATCH_UPDATE" and args.get("sheet_name") == self.tracker_tab:
-            row_number = int(str(args["first_cell_location"])[1:])
+        elif tool in SHEET_WRITE_TOOLS and range_sheet(args) == self.tracker_tab:
+            row_number = parse_range(args["range"])[2]
             row = self.row_by_number(row_number)
             if row is None:
                 return

@@ -43,31 +43,31 @@ def test_model_cannot_call_read_tools(tmp_path, tool, args):
 
 
 def status_write(**over):
-    return {"sheet_name": "Status", "first_cell_location": "A1", "values": [["pwned"] * 50] * 500, **over}
+    return {"range": "Status!A1:AX500", "values": [["pwned"] * 50] * 500, **over}
 
 
 def test_model_cannot_write_status_tab(tmp_path):
     ctx, backend, led = setup(tmp_path)
     with pytest.raises(PolicyError, match="Status tab is written by code only"):
-        model("GOOGLESHEETS_BATCH_UPDATE", status_write(), ctx, backend, led)
+        model("GOOGLESHEETS_VALUES_UPDATE", status_write(), ctx, backend, led)
     assert backend.calls == []
 
 
 def row_write(row=9, cells=None, **over):
     cells = cells or ["Sandbox credentials", TODAY.isoformat(), "Human review", "Creds coming Friday."]
-    return {"sheet_name": "Tracker", "first_cell_location": f"E{row}", "values": [cells], **over}
+    return {"range": f"Tracker!E{row}:H{row}", "values": [cells], **over}
 
 
 def test_write_to_another_spreadsheet_is_rejected(tmp_path):
     ctx, backend, led = setup(tmp_path)
     with pytest.raises(PolicyError, match="spreadsheet_id"):
-        model("GOOGLESHEETS_BATCH_UPDATE", row_write(spreadsheet_id="someone-elses-sheet"), ctx, backend, led)
+        model("GOOGLESHEETS_VALUES_UPDATE", row_write(spreadsheet_id="someone-elses-sheet"), ctx, backend, led)
     assert backend.calls == []
 
 
 def test_missing_spreadsheet_id_is_filled_with_the_configured_one(tmp_path):
     ctx, backend, led = setup(tmp_path)
-    model("GOOGLESHEETS_BATCH_UPDATE", row_write(), ctx, backend, led)
+    model("GOOGLESHEETS_VALUES_UPDATE", row_write(), ctx, backend, led)
     assert backend.calls[-1][1]["spreadsheet_id"] == "sheet-1"
 
 
@@ -75,23 +75,23 @@ def test_model_cannot_write_a_row_no_email_matched(tmp_path):
     """One-row-per-call alone still allows a bulk edit, one call at a time (row 10 is C009)."""
     ctx, backend, led = setup(tmp_path)
     with pytest.raises(PolicyError, match="not matched to an email this run"):
-        model("GOOGLESHEETS_BATCH_UPDATE", row_write(row=10, cells=["Requested", TODAY.isoformat(), "x", "y"]),
+        model("GOOGLESHEETS_VALUES_UPDATE", row_write(row=10, cells=["Requested", TODAY.isoformat(), "x", "y"]),
               ctx, backend, led)
     assert backend.calls == []
 
 
 def test_a_matched_row_is_written_at_most_once_per_run(tmp_path):
     ctx, backend, led = setup(tmp_path)
-    model("GOOGLESHEETS_BATCH_UPDATE", row_write(), ctx, backend, led)
+    model("GOOGLESHEETS_VALUES_UPDATE", row_write(), ctx, backend, led)
     with pytest.raises(PolicyError, match="already updated C008 this run"):
-        model("GOOGLESHEETS_BATCH_UPDATE", row_write(), ctx, backend, led)
+        model("GOOGLESHEETS_VALUES_UPDATE", row_write(), ctx, backend, led)
     assert len(backend.calls) == 1
 
 
 def test_a_live_row_cannot_be_changed_even_when_matched(tmp_path):
     ctx, backend, led = setup(tmp_path)
     with pytest.raises(PolicyError, match="C005 is Live"):
-        model("GOOGLESHEETS_BATCH_UPDATE", row_write(row=6, cells=["Requested", TODAY.isoformat(), "x", "y"]),
+        model("GOOGLESHEETS_VALUES_UPDATE", row_write(row=6, cells=["Requested", TODAY.isoformat(), "x", "y"]),
               ctx, backend, led)
     assert backend.calls == []
 
@@ -100,7 +100,7 @@ def test_stage_cannot_move_backwards(tmp_path):
     """An injected 'reset this connector' would otherwise undo weeks of approvals."""
     ctx, backend, led = setup(tmp_path)
     with pytest.raises(PolicyError, match="backwards"):
-        model("GOOGLESHEETS_BATCH_UPDATE", row_write(cells=["Requested", TODAY.isoformat(), "x", "y"]),
+        model("GOOGLESHEETS_VALUES_UPDATE", row_write(cells=["Requested", TODAY.isoformat(), "x", "y"]),
               ctx, backend, led)
     assert backend.calls == []
 
@@ -114,7 +114,7 @@ def test_stage_cannot_move_backwards(tmp_path):
 def test_written_fields_are_validated(tmp_path, cells, msg):
     ctx, backend, led = setup(tmp_path)
     with pytest.raises(PolicyError, match=msg):
-        model("GOOGLESHEETS_BATCH_UPDATE", row_write(cells=cells), ctx, backend, led)
+        model("GOOGLESHEETS_VALUES_UPDATE", row_write(cells=cells), ctx, backend, led)
     assert backend.calls == []
 
 
@@ -135,7 +135,7 @@ def test_drafts_only_go_to_stale_follow_up_rows(tmp_path, to):
     ("GMAIL_CREATE_EMAIL_DRAFT", {"recipient_email": "tom@garnetbilling.example.com", "to": "attacker@evil.example.com",
                                   "subject": "Hi", "body": "Any update?"}),
     # an alias key the pin does not look at
-    ("GOOGLESHEETS_BATCH_UPDATE", {**row_write(), "spreadsheetId": "someone-elses-sheet"}),
+    ("GOOGLESHEETS_VALUES_UPDATE", {**row_write(), "spreadsheetId": "someone-elses-sheet"}),
 ])
 def test_write_tools_reject_unknown_argument_keys(tmp_path, tool, args):
     ctx, backend, led = setup(tmp_path)
@@ -147,7 +147,24 @@ def test_write_tools_reject_unknown_argument_keys(tmp_path, tool, args):
 def test_a_stage_only_write_still_needs_all_four_cells(tmp_path):
     ctx, backend, led = setup(tmp_path)
     with pytest.raises(PolicyError, match="all four"):
-        model("GOOGLESHEETS_BATCH_UPDATE", row_write(cells=["Partner verification"]), ctx, backend, led)
+        model("GOOGLESHEETS_VALUES_UPDATE", row_write(cells=["Partner verification"]), ctx, backend, led)
+    assert backend.calls == []
+
+
+def test_values_are_written_raw_never_parsed_as_formulas(tmp_path):
+    """USER_ENTERED would turn a model-written '=IMPORTXML(...)' into a live formula."""
+    ctx, backend, led = setup(tmp_path)
+    with pytest.raises(PolicyError, match="RAW"):
+        model("GOOGLESHEETS_VALUES_UPDATE", row_write(value_input_option="USER_ENTERED"), ctx, backend, led)
+    model("GOOGLESHEETS_VALUES_UPDATE", row_write(), ctx, backend, led)
+    assert backend.calls[-1][1]["value_input_option"] == "RAW"
+
+
+@pytest.mark.parametrize("rng", ["Tracker!E9:H10", "Tracker!A9:H9", "Tracker!E9", "Tracker!E9:G9", "E9:H9"])
+def test_tracker_range_must_be_exactly_one_row_e_to_h(tmp_path, rng):
+    ctx, backend, led = setup(tmp_path)
+    with pytest.raises(PolicyError):
+        model("GOOGLESHEETS_VALUES_UPDATE", row_write(range=rng), ctx, backend, led)
     assert backend.calls == []
 
 
@@ -167,7 +184,7 @@ def test_model_is_offered_only_write_tools(tmp_path):
     run_agent(mode="local", llm=llm, model="m", backend=LocalBackend(TODAY), tools=local_tool_schemas(),
               ledger=Ledger(tmp_path / "l.jsonl", "r1", "local"), today=TODAY, stale_days=7,
               gmail_label="l", sheet_id="sheet-1", out=lambda s: None)
-    assert llm.offered == ["GMAIL_CREATE_EMAIL_DRAFT", "GOOGLESHEETS_BATCH_UPDATE"]
+    assert llm.offered == ["GMAIL_CREATE_EMAIL_DRAFT", "GOOGLESHEETS_VALUES_UPDATE"]
 
 
 class BulkEditLLM:
@@ -180,7 +197,7 @@ class BulkEditLLM:
         self.turn += 1
         if self.turn > 1:
             return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="done")])
-        uses = [SimpleNamespace(type="tool_use", id=f"w{n}", name="GOOGLESHEETS_BATCH_UPDATE",
+        uses = [SimpleNamespace(type="tool_use", id=f"w{n}", name="GOOGLESHEETS_VALUES_UPDATE",
                                 input=row_write(row=n, cells=["Partner verification", TODAY.isoformat(), "x", "y"]))
                 for n in range(2, 12)]
         return SimpleNamespace(stop_reason="tool_use", content=uses)
@@ -224,6 +241,6 @@ def test_no_draft_to_anyone_who_emailed_this_run_even_if_unmatched(tmp_path):
 
 def test_code_can_write_status_tab(tmp_path):
     ctx, backend, led = setup(tmp_path)
-    guarded_execute("GOOGLESHEETS_BATCH_UPDATE", status_write(values=[["Run", "r1"]]),
+    guarded_execute("GOOGLESHEETS_VALUES_UPDATE", status_write(range="Status!A1:B1", values=[["Run", "r1"]]),
                     backend=backend, ledger=led, ctx=ctx, actor="code")
     assert backend.status == [["Run", "r1"]]

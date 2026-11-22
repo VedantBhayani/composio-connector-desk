@@ -88,7 +88,7 @@ def test_full_local_run_through_the_adapter_creates_the_stale_draft(tmp_path):
                        today=TODAY, stale_days=7, gmail_label="l", sheet_id="s", out=lambda s: None)
     assert report.summary["drafts_created"] == ["C007"]
     assert report.final_text == "Drafted one follow-up."
-    assert [t["function"]["name"] for t in client.requests[0]["tools"]] == ["GMAIL_CREATE_EMAIL_DRAFT", "GOOGLESHEETS_BATCH_UPDATE"]
+    assert [t["function"]["name"] for t in client.requests[0]["tools"]] == ["GMAIL_CREATE_EMAIL_DRAFT", "GOOGLESHEETS_VALUES_UPDATE"]
 
 
 def _local(tmp_path, llm):

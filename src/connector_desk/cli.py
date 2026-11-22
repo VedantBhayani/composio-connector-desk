@@ -19,9 +19,8 @@ from .local_mode import LocalBackend, ScriptedLLM, local_tool_schemas, write_sam
 
 # Printed after every run. Update it only from real, recorded live runs.
 NOT_TESTED_LIVE = [
-    "Creating a real Composio session with this config (toolkits, tools.enable, direct_tools preset, require_approval, sandbox off)",
+    "Running a full live session (connect, then fetch/draft/update) with this config",
     "Exact tool slugs and argument names for Gmail/Sheets (run `connector_desk schemas` to check them)",
-    "GOOGLESHEETS_BATCH_UPDATE: Composio's Sheets guide marks it deprecated (GOOGLESHEETS_VALUES_UPDATE)",
     "Gmail fetch by 'label:<GMAIL_LABEL>' query, whether bodies arrive by default, and the response shape",
     "Sheets batch-get/batch-update argument shapes and the Status tab write",
     "A real model (any provider) on email 06 (prompt injection) and on matching emails 01-05",

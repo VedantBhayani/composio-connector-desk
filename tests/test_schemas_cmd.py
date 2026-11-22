@@ -19,8 +19,8 @@ def tool(slug, required=(), props=(), outputs=(), deprecated=False):
 
 KNOWN = {
     "GMAIL_FETCH_EMAILS": tool("GMAIL_FETCH_EMAILS", props=["query", "max_results", "verbose"], outputs=["messages"]),
-    "GOOGLESHEETS_BATCH_UPDATE": tool("GOOGLESHEETS_BATCH_UPDATE", ["spreadsheet_id", "sheet_name", "values"],
-                                      ["spreadsheet_id", "sheet_name", "values", "first_cell_location"], deprecated=True),
+    "GOOGLESHEETS_VALUES_UPDATE": tool("GOOGLESHEETS_VALUES_UPDATE", ["spreadsheet_id", "range", "value_input_option", "values"],
+                                       ["spreadsheet_id", "range", "value_input_option", "values"], deprecated=True),
 }
 
 
@@ -42,9 +42,9 @@ def test_schemas_prints_deprecation_and_params_and_saves_json(tmp_path, monkeypa
     out_file = tmp_path / "schemas.json"
     assert main(["schemas", "--out", str(out_file)]) == 0
     out = capsys.readouterr().out
-    assert "GOOGLESHEETS_BATCH_UPDATE" in out and "DEPRECATED" in out
-    assert "required: spreadsheet_id, sheet_name, values" in out
-    assert "GOOGLESHEETS_VALUES_UPDATE" in out and "not found" in out  # candidate replacement is checked too
+    assert "GOOGLESHEETS_VALUES_UPDATE DEPRECATED" in out
+    assert "required: spreadsheet_id, range, value_input_option, values" in out
+    assert "GMAIL_SEND_EMAIL: ERROR" in out and "not found" in out  # blocked tools are checked too
     saved = json.loads(out_file.read_text())
     assert saved["GMAIL_FETCH_EMAILS"]["inputs"] == ["query", "max_results", "verbose"]
     assert saved["GMAIL_FETCH_EMAILS"]["outputs"] == ["messages"]

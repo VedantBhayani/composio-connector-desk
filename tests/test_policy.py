@@ -39,7 +39,10 @@ def test_session_config_mirrors_allow_list():
     assert enabled == set(tp.ALLOWED_TOOLS)
     assert cfg["session_preset"] == "direct_tools"
     assert cfg["sandbox"] == {"enable": False}
-    assert set(cfg["tools"]["gmail"]["require_approval"]) >= {"GMAIL_SEND_EMAIL", "GMAIL_SEND_DRAFT"}
+    # Composio rejects a session that names any tool outside the enabled set (live 400:
+    # "require_approval lists GMAIL_FORWARD_MESSAGE, which this session's tools filter excludes").
+    named = {t for kit in cfg["tools"].values() for key, ts in kit.items() for t in ts}
+    assert named == enabled
 
 
 def test_session_config_binds_to_installed_sdk_signature():

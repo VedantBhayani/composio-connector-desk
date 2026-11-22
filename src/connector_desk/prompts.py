@@ -16,9 +16,9 @@ YOUR JOB FOR THIS RUN
    `code_match` is a deterministic hint (exact sender, exact domain, or a single app name).
    If you are not sure, or code_match is null, change NOTHING for that email. It will be
    reported as "{NEEDS_HUMAN_AMBIGUOUS}".
-2. For a row in an email's `code_match`, write exactly one GOOGLESHEETS_BATCH_UPDATE call:
-   sheet_name "Tracker", first_cell_location "E<row_number>", values [[Stage, Last_Touched, Next_Action, Notes]].
-   You do not need spreadsheet_id; the system fills it in.
+2. For a row in an email's `code_match`, write exactly one GOOGLESHEETS_VALUES_UPDATE call:
+   range "Tracker!E<row_number>:H<row_number>", values [[Stage, Last_Touched, Next_Action, Notes]].
+   You do not need spreadsheet_id or value_input_option; the system fills them in.
    Stage must be one of {STAGES}. Never set "Live" (a human does that). Do not move a row backwards.
    Last_Touched is today's date (YYYY-MM-DD). Next_Action: under 200 characters.
    Notes: one short factual sentence, under 300 characters.
