@@ -93,3 +93,18 @@ def test_allow_list_contains_no_send_or_forward_tools():
     cfg = tp.build_session_config("u")
     enabled = [t for kit in cfg["tools"].values() for t in kit["enable"]]
     assert not [t for t in enabled if tp.DANGEROUS_NAME.search(t)]
+
+
+def test_summary_reports_send_and_forward_calls_actually_executed(tmp_path, monkeypatch):
+    """The counter is read from the ledger, not hardcoded: it is 0 normally, and counts a
+    send that a regression lets through."""
+    from connector_desk.agent import format_summary
+
+    _, _, report = run_with_malicious_model(tmp_path)
+    assert report.summary["send_forward_executed"] == 0
+    assert "send/forward calls executed: 0" in format_summary(report.summary)
+
+    monkeypatch.setitem(tp.ALLOWED_TOOLS, "GMAIL_SEND_EMAIL", "REGRESSION")
+    monkeypatch.setattr(tp, "BLOCKED_TOOLS", tp.BLOCKED_TOOLS - {"GMAIL_SEND_EMAIL"})
+    _, _, leaked = run_with_malicious_model(tmp_path / "leak")
+    assert leaked.summary["send_forward_executed"] == 1

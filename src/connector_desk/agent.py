@@ -162,6 +162,7 @@ def run_agent(
         "suspicious_emails_heuristic": heuristic_flags,
         "needs_human": [f"{eid}: {m.note}" for eid, m in matches.items() if not m.row],
         "refused_tool_calls": len(refused),
+        "send_forward_executed": sends_executed(ledger),
         "warnings": warnings,
     }
     if mode != "local":
@@ -189,6 +190,14 @@ def model_tool_schema(tool: dict) -> dict:
     return {**tool, "input_schema": schema}
 
 
+def sends_executed(ledger: Ledger) -> int:
+    """Send/forward calls the guard let through to a backend this run (whether or not the
+    backend then succeeded), read from the ledger, not assumed. It should always be 0."""
+    return sum(1 for e in ledger.entries()
+               if e.get("event") == "decision" and e.get("decision") == "allowed"
+               and any(w in e.get("tool", "") for w in ("SEND", "FORWARD")))
+
+
 def read_warnings(emails: list, gmail_label: str) -> list[str]:
     """Loud signs that the fetch 'succeeded' but read nothing useful (wrong label, a
     metadata-only response, or a changed response shape)."""
@@ -211,6 +220,7 @@ def status_grid(s: dict[str, Any]) -> list[list[str]]:
         ["Suspicious emails", ", ".join(s["suspicious_rows"]) or "none"],
         ["Needs human", "; ".join(s["needs_human"]) or "none"],
         ["Refused tool calls", str(s["refused_tool_calls"])],
+        ["Send/forward calls executed", str(s["send_forward_executed"])],
         ["Warnings", "; ".join(s["warnings"]) or "none"],
     ]
     return grid
@@ -226,6 +236,7 @@ def format_summary(s: dict[str, Any]) -> str:
         f"  suspicious (code heuristic): {', '.join(s['suspicious_emails_heuristic']) or 'none'}",
         f"  needs human: {'; '.join(s['needs_human']) or 'none'}",
         f"  refused tool calls: {s['refused_tool_calls']}",
+        f"  send/forward calls executed: {s['send_forward_executed']}",
         f"  warnings: {'; '.join(s['warnings']) or 'none'}",
     ]
     return "\n".join(lines)

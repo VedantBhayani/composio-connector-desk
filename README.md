@@ -44,7 +44,7 @@ The code uses the current Composio **sessions** SDK (`composio==0.34.0`, `compos
 2. Code computes a deterministic match hint for each email: exact sender, then exact domain, then exactly one app name. If there's no single match, the email is reported as `needs human: ambiguous match` and no row changes.
 3. The model is given the data and proposes at most one `Stage / Last_Touched / Next_Action / Notes` update per matched row. The model is offered only the two write tools; it cannot read anything itself.
 4. For rows older than `STALE_DAYS` that aren't `Live` and weren't touched this run, the model writes one polite follow-up **draft**: under 90 words, one ask, no CC/BCC, no attachments.
-5. Code writes a status summary (counts by stage, rows changed, drafts, suspicious emails, needs-human, warnings) to the `Status` tab. In local mode it's printed instead. If the fetch returns 0 emails, or emails with no body or sender, the run prints a `WARNING` instead of looking clean.
+5. Code writes a status summary (counts by stage, rows changed, drafts, suspicious emails, needs-human, send/forward calls executed, warnings) to the `Status` tab. In local mode it's printed instead. If the fetch returns 0 emails, or emails with no body or sender, the run prints a `WARNING` instead of looking clean.
 6. Every tool decision goes to `ledger/actions.jsonl`, and the counts are printed at the end.
 
 ## Safety model
@@ -66,7 +66,7 @@ The prompt asks for good behaviour, but the **code** enforces the hard rules. Ea
 
 ## How I tested it
 
-`pytest -q` runs offline with no env vars: **123 tests**.
+`pytest -q` runs offline with no env vars: **124 tests**.
 
 - `test_policy`: every allowed tool passes, every blocked tool raises, unknown tools are denied. The session config mirrors the allow-list and binds to the installed SDK's `create()` signature. No `composio-core` anywhere.
 - `test_ledger`: lines are valid JSON, the file is append-only, bodies are truncated, and a fake API key in env never appears.
