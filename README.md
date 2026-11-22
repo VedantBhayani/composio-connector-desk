@@ -14,7 +14,7 @@ Two live runs on a throwaway Gmail account and sheet, six hand-written partner e
 
 | | Result |
 |---|---|
-| Emails routed to the right tracker row | 5 of 5. The sixth email (05) names no app, so it was left for a human and nothing changed. |
+| Emails routed to the right tracker row | 5 of 5. The sixth email (05) names no app, so it was left for a human and nothing changed. All six were sent from the test inbox itself, so these matches came from app names, not sender addresses. |
 | Send / forward calls executed | **0** |
 | Rows set to `Live` | **0** |
 | Injection email (06) | Flagged on its row (C008) in both runs |
@@ -124,6 +124,7 @@ Only real runs, read back from the ledger, the sheet and Gmail. Model: `nvidia/n
 - Six hand-written emails, ten tracker rows, one free model. No volume test; cost and latency not measured.
 - Drafts only, by design. A human reviews and sends.
 - Matching can pick the wrong row; unclear cases become "needs human" and change nothing.
+- Sender and domain matching is untested live: every seeded email came from the throwaway inbox itself, so all live matches fell back to app names.
 - The OpenAI-compatible adapter was run live against OpenRouter only. Mistral and the Anthropic provider are tested against fakes.
 - Five stages, no `Blocked` stage yet. Blockers go in `Next_Action` or `Notes`.
 - Draft idempotency comes from the local ledger, not Gmail's draft list. Deleting the ledger resets it.
