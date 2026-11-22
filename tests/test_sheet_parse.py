@@ -88,6 +88,6 @@ def test_self_sent_seed_emails_still_match_by_app_name(rows):
     expected = {"fixture-01": "C001", "fixture-02": "C002", "fixture-03": "C003", "fixture-04": "C004",
                 "fixture-05": None, "fixture-06": "C008"}
     for e in load_email_fixtures(TODAY):
-        e["from"] = "Throwaway <throwaway.test@gmail.com>"
+        e["from"] = "Throwaway <me@throwaway-inbox.example.org>"
         res = match_email(normalize_email(e), rows)
         assert (res.row.connector_id if res.row else None) == expected[e["id"]], e["id"]
